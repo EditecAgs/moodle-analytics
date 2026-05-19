@@ -15,15 +15,17 @@ class MoodleService
     protected int $cacheTtl;
     protected string $endpoint;
     protected array $categoriasEad;
+    protected bool $verifySsl;
 
-    public function __construct()
-    {
-        $this->url           = rtrim(config('moodle.url'), '/');
-        $this->token         = config('moodle.token');
-        $this->cacheTtl      = (int) config('moodle.cache_ttl', 1800);
-        $this->endpoint      = config('moodle.endpoint', '/webservice/rest/server.php');
-        $this->categoriasEad = config('moodle.categorias_ead', [450]);
-    }
+        public function __construct()
+        {
+            $this->url           = rtrim(config('moodle.url'), '/');
+            $this->token         = config('moodle.token');
+            $this->cacheTtl      = (int) config('moodle.cache_ttl', 1800);
+            $this->endpoint      = config('moodle.endpoint', '/webservice/rest/server.php');
+            $this->categoriasEad = config('moodle.categorias_ead', [450]);
+            $this->verifySsl     = config('moodle.verify_ssl', true);
+        }
 
     // ─────────────────────────────────────────────────────────
     // CORE — llamadas HTTP
@@ -45,79 +47,115 @@ class MoodleService
         Cache::forget('moodle_' . md5($function . serialize($params)));
     }
 
-    protected function fetch(string $function, array $params): array
-    {
-        try {
-            $verify = env('CA_BUNDLE', true);
-            if ($verify === 'false' || $verify === false) $verify = false;
-
-            $response = Http::withOptions(['verify' => $verify])
-                ->timeout(200)
-                ->get($this->url . $this->endpoint, array_merge([
-                    'wstoken'            => $this->token,
-                    'moodlewsrestformat' => 'json',
-                    'wsfunction'         => $function,
-                ], $params));
-
-            if ($response->failed()) {
-                Log::error("Moodle API error [{$function}]: HTTP {$response->status()}");
-                return [];
-            }
-
-            $data = $response->json();
-
-            if (isset($data['exception'])) {
-                Log::error("Moodle exception [{$function}]: " . ($data['message'] ?? 'Sin mensaje'));
-                return [];
-            }
-
-            return is_array($data) ? $data : [];
-
-        } catch (Exception $e) {
-            Log::error("Moodle connection error [{$function}]: " . $e->getMessage());
-            return [];
-        }
-    }
-
-
-
-    //funcion para endpoinds con post
-protected function post(string $function, array $params): array
+protected function fetch(string $function, array $params): array
 {
     try {
-        $verify = env('CA_BUNDLE', true);
-        if ($verify === 'false' || $verify === false) $verify = false;
 
-        $url = $this->url . $this->endpoint 
-             . '?wstoken=' . $this->token
-             . '&moodlewsrestformat=json'
-             . '&wsfunction=' . $function;
+        $verify = $this->verifySsl;
 
-$response = Http::withOptions(['verify' => $verify])
-    ->timeout(30)
-    ->asForm()
-    ->post($url, $params);
+        // Token por defecto
+        $token = $this->token;
 
+        // Si es función de eventos, usar otro token
+        if ($function === 'local_global_reports_topic_completion_grades_report') {
+            $token = env('MOODLE_TOKEN_OTHERS');
+        }
+        if ($function === 'local_global_reports_access_teachers_report') {
+            $token = env('MOODLE_TOKEN_OTHERS');
+        }
+
+        $response = Http::withOptions(['verify' => $verify])
+            ->timeout(200)
+            ->get($this->url . $this->endpoint, array_merge([
+                'wstoken'            => $token,
+                'moodlewsrestformat' => 'json',
+                'wsfunction'         => $function,
+            ], $params));
 
         if ($response->failed()) {
-            Log::error("Moodle API POST error [{$function}]: HTTP {$response->status()}");
+            Log::error("Moodle API error [{$function}]: HTTP {$response->status()}");
             return [];
         }
 
         $data = $response->json();
 
         if (isset($data['exception'])) {
-            Log::error("Moodle POST exception [{$function}]: " . ($data['message'] ?? 'Sin mensaje'));
-            return ['error' => $data['message'] ?? 'Error desconocido'];
+            Log::error("Moodle exception [{$function}]: " . json_encode($data));
+            return [];
         }
 
         return is_array($data) ? $data : [];
 
     } catch (Exception $e) {
-        Log::error("Moodle POST connection error [{$function}]: " . $e->getMessage());
+        Log::error("Moodle connection error [{$function}]: " . $e->getMessage());
         return [];
     }
 }
+
+    //funcion para endpoinds con post
+    protected function post(string $function, array $params): array
+    {
+        try {
+            $verify = $this->verifySsl;
+
+            $url = $this->url . $this->endpoint 
+                . '?wstoken=' . $this->token
+                . '&moodlewsrestformat=json'
+                . '&wsfunction=' . $function;
+
+    $response = Http::withOptions(['verify' => $verify])
+        ->timeout(30)
+        ->asForm()
+        ->post($url, $params);
+
+
+            if ($response->failed()) {
+                Log::error("Moodle API POST error [{$function}]: HTTP {$response->status()}");
+                return [];
+            }
+
+            $data = $response->json();
+
+            if (isset($data['exception'])) {
+                Log::error("Moodle POST exception [{$function}]: " . ($data['message'] ?? 'Sin mensaje'));
+                return ['error' => $data['message'] ?? 'Error desconocido'];
+            }
+
+            return is_array($data) ? $data : [];
+
+        } catch (Exception $e) {
+            Log::error("Moodle POST connection error [{$function}]: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Obtiengo TODOS los registros de un endpoint paginado (limit/offset).
+     * Hace llamadas en lotes hasta que el servidor devuelva menos que $limit.
+     */
+    public function fetchAllPaginated(string $function, array $baseParams = [], int $limit = 100): array
+    {
+        $all    = [];
+        $offset = 0;
+
+        do {
+            $params = array_merge($baseParams, [
+                'limit'  => $limit,
+                'offset' => $offset,
+            ]);
+
+            // Sin caché para siempre traer datos frescos en reportes
+            $batch = $this->callFresh($function, $params);
+
+            if (empty($batch)) break;
+
+            $all    = array_merge($all, $batch);
+            $offset += $limit;
+
+        } while (count($batch) === $limit); // si trajo menos que $limit, ya no hay más
+
+        return $all;
+    }
     /**
      * Cursos de una categoría específica.
      */
@@ -345,7 +383,6 @@ public function getEventos(array $courseIds = [], ?int $from = null, ?int $to = 
 
 public function getReporteAccesosDocentes(array $categoryIds = []): array
 {
-
     $categorias = empty($categoryIds) ? $this->categoriasEad : $categoryIds;
 
     $params = [];
@@ -353,8 +390,10 @@ public function getReporteAccesosDocentes(array $categoryIds = []): array
         $params["categories[{$i}]"] = $id;
     }
 
-    return $this->callFresh('local_global_reports_access_teachers_report', $params);
-
+    return $this->fetchAllPaginated(
+        'local_global_reports_access_teachers_report',
+        $params
+    );
 }
 public function getDocentesCurso(int $courseId): array
 {
@@ -374,6 +413,19 @@ public function getDocentesCurso(int $courseId): array
 
     return $docentes->toArray();
 }
+public function getReporteCalificaciones(array $categoryIds = []): array
+{
+    $categorias = empty($categoryIds) ? $this->categoriasEad : $categoryIds;
 
+    $params = [];
+    foreach ($categorias as $i => $id) {
+        $params["categories[{$i}]"] = $id;
+    }
+
+    return $this->fetchAllPaginated(
+        'local_global_reports_topic_completion_grades_report',
+        $params
+    );
+}
     
 }

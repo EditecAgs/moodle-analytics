@@ -21,10 +21,13 @@ Route::middleware(SimpleAuthMiddleware::class)->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // Calificaciones
+    
     Route::get('/calificaciones', [CalificacionesController::class, 'index'])->name('calificaciones.index');
     // Docentes
-    Route::get('/docentes', [DocentesController::class, 'index'])->name('docentes.index');
-    Route::get('/docentes/{id}', [DocentesController::class, 'show'])->name('docentes.show');
+    Route::get('/docentes',            [DocentesController::class, 'index'])->name('docentes.index');
+    Route::get('/docentes/export-pdf', [DocentesController::class, 'exportPdf'])->name('docentes.pdf');
+    Route::get('/docentes/pdf-all', [DocentesController::class, 'exportPdfAll'])
+    ->name('docentes.pdf.all');
 
     // Alumnos
     Route::get('/alumnos/riesgo', [AlumnosController::class, 'riesgo'])->name('alumnos.riesgo');
