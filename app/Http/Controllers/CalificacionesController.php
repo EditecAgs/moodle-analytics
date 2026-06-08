@@ -597,10 +597,10 @@ class CalificacionesController extends Controller
         
         $datosPDF = $this->prepararDatosParaPDF($reporteAuditoria);
         
-        $pdf = PDF::loadView('pdf.auditoria_calificaciones', $datosPDF);
+        $pdf = PDF::loadView('pdf.reporte_calificaciones', $datosPDF);
         $pdf->setPaper('a4', 'landscape');
         
-        return $pdf->download('auditoria_calificaciones_' . now()->format('Ymd_His') . '.pdf');
+        return $pdf->download('reporte_calificaciones_' . now()->format('Ymd_His') . '.pdf');
     }
     
 private function prepararDatosParaPDF(array $reporteAuditoria): array
