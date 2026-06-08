@@ -3,56 +3,75 @@
 @section('title', 'Reporte de Calificaciones')
 
 @section('actions')
+<div style="display: flex; gap: 1rem; align-items: center;">
     <span style="font-size:12px; color:#94a3b8;">
         Última actualización: {{ now()->format('d/m/Y H:i') }}
     </span>
+    <a href="{{ route('calificaciones.descargar-pdf', request()->query()) }}" 
+       target="_blank"
+       style="background:#dc2626; color:white; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px; display:inline-flex; align-items:center; gap:6px;">
+        📄 Descargar PDF
+    </a>
+    <a href="{{ route('calificaciones.pdf.grafica', request()->query()) }}" 
+   target="_blank"
+   style="background:#059669; color:white; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px; display:inline-flex; align-items:center; gap:6px;">
+    🥧 Descargar gráfica de pastel
+</a>
+</div>
 @endsection
 
 @section('content')
 
-{{-- SECCIÓN DE EVENTOS DESTACADOS (Curso 1507) --}}
+{{-- SECCIÓN DE EVENTOS DESTACADOS (Curso 1507) - COLLAPSABLE --}}
 @if(!empty($eventosFiltrados))
 <div class="eventos-card" style="margin-bottom:1.5rem;">
-    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem;">
-        <span style="font-size:20px;">📅</span>
-        <h3 style="margin:0; color:#1e293b;">Eventos importantes - Curso 1507</h3>
-        <span class="badge badge-blue">{{ count($eventosFiltrados) }} eventos</span>
-    </div>
-    
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1rem;">
-        @foreach($eventosFiltrados as $evento)
-        <div class="evento-item">
-            <div class="evento-fecha">
-                <span class="evento-dia">{{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('d') }}</span>
-                <span class="evento-mes">{{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->isoFormat('MMM') }}</span>
+    <details {{ request()->has('eventos_open') ? 'open' : '' }}>
+        <summary style="cursor:pointer; list-style:none;">
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+                <span style="font-size:20px;">📅</span>
+                <h3 style="margin:0; color:#1e293b; display:inline-block;">Eventos importantes - Curso 1507</h3>
+                <span class="badge badge-blue">{{ count($eventosFiltrados) }} eventos</span>
+                <span style="font-size:12px; color:#94a3b8; margin-left:auto;">▼ Haz clic para {{ request()->has('eventos_open') ? 'contraer' : 'expandir' }}</span>
             </div>
-            <div class="evento-info">
-                <div class="evento-titulo">
-                    @if(str_contains($evento['name'], 'Cierre'))
-                        🔒
-                    @elseif(str_contains($evento['name'], 'Reunión'))
-                        👥
-                    @endif
-                    {{ $evento['name'] }}
+        </summary>
+        <div style="margin-top:1rem;">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1rem;">
+                @foreach($eventosFiltrados as $evento)
+                <div class="evento-item">
+                    <div class="evento-fecha">
+                        <span class="evento-dia">{{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('d') }}</span>
+                        <span class="evento-mes">{{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->isoFormat('MMM') }}</span>
+                    </div>
+                    <div class="evento-info">
+                        <div class="evento-titulo">
+                            @if(str_contains($evento['name'], 'Cierre'))
+                                🔒
+                            @elseif(str_contains($evento['name'], 'Reunión'))
+                                👥
+                            @endif
+                            {{ $evento['name'] }}
+                        </div>
+                        <div class="evento-fecha-hora">
+                            📅 {{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('d/m/Y') }}
+                            ⏰ {{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('H:i') }}
+                            @if($evento['timeend'] != $evento['timestart'])
+                                → {{ \Carbon\Carbon::createFromTimestamp($evento['timeend'])->format('H:i') }}
+                            @endif
+                        </div>
+                        @if($evento['description'])
+                        <div class="evento-descripcion">
+                            {{ Str::limit(strip_tags($evento['description']), 100) }}
+                        </div>
+                        @endif
+                    </div>
                 </div>
-                <div class="evento-fecha-hora">
-                    📅 {{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('d/m/Y') }}
-                    ⏰ {{ \Carbon\Carbon::createFromTimestamp($evento['timestart'])->format('H:i') }}
-                    @if($evento['timeend'] != $evento['timestart'])
-                        → {{ \Carbon\Carbon::createFromTimestamp($evento['timeend'])->format('H:i') }}
-                    @endif
-                </div>
-                @if($evento['description'])
-                <div class="evento-descripcion">
-                    {{ Str::limit(strip_tags($evento['description']), 100) }}
-                </div>
-                @endif
+                @endforeach
             </div>
         </div>
-        @endforeach
-    </div>
+    </details>
 </div>
 @endif
+
 {{-- Filtro categorías --}}
 <form method="GET" style="margin-bottom:1.5rem; padding:1rem; background:#f8fafc; border-radius:8px;">
     <label style="font-weight:600; margin-right:1rem;">Filtrar por categorías:</label>
@@ -71,7 +90,61 @@
         <a href="{{ route('calificaciones.index') }}" style="margin-left:0.5rem; padding:0.25rem 1rem; background:#64748b; color:white; border:none; border-radius:4px; text-decoration:none;">Limpiar</a>
     @endif
 </form>
-{{-- ✅ NUEVA SECCIÓN: Reporte de Auditoría Post-Academia --}}
+
+{{-- CUADROS GENERALES DE RESULTADOS --}}
+@if(isset($reporteAuditoria) && !isset($reporteAuditoria['error']))
+@php
+    $cursosConProblema = collect($reporteAuditoria['cursos'])->where('estado', 'error')->count();
+    $cursosJustificados = collect($reporteAuditoria['cursos'])->where('estado', 'warning')->count();
+    $cursosOk = collect($reporteAuditoria['cursos'])->where('estado', 'ok')->count();
+    $cursosBien = $cursosOk + $cursosJustificados;
+@endphp
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    {{-- Cuadro Rojo: Cursos con problema (entregaron a tiempo sin calificar) --}}
+    <div style="background: linear-gradient(135deg, #fff1f1 0%, #fee2e2 100%); border-radius: 16px; padding: 1.25rem; border-left: 4px solid #ef4444; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="background: #ef4444; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px;">❌</span>
+            </div>
+            <div>
+                <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; font-weight: 600;">Cursos con problema</div>
+                <div style="font-size: 32px; font-weight: 800; color: #dc2626;">{{ $cursosConProblema }}</div>
+                <div style="font-size: 11px; color: #7f1d1d;">Entregaron a tiempo SIN calificar</div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Cuadro Verde: Cursos bien (justificados + completados) --}}
+    <div style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-radius: 16px; padding: 1.25rem; border-left: 4px solid #10b981; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="background: #10b981; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px;">✅</span>
+            </div>
+            <div>
+                <div style="font-size: 12px; color: #166534; text-transform: uppercase; font-weight: 600;">Cursos bien</div>
+                <div style="font-size: 32px; font-weight: 800; color: #16a34a;">{{ $cursosBien }}</div>
+                <div style="font-size: 11px; color: #14532d;">Justificados + Completados</div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Cuadro Total de cursos auditados --}}
+    <div style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 16px; padding: 1.25rem; border-left: 4px solid #64748b; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div style="background: #64748b; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px;">📊</span>
+            </div>
+            <div>
+                <div style="font-size: 12px; color: #334155; text-transform: uppercase; font-weight: 600;">Total auditados</div>
+                <div style="font-size: 32px; font-weight: 800; color: #1e293b;">{{ count($reporteAuditoria['cursos']) }}</div>
+                <div style="font-size: 11px; color: #475569;">Cursos con tema de corte</div>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- SECCIÓN: Reporte de Auditoría Post-Academia (CORREGIDO) --}}
 @if(isset($reporteAuditoria) && !isset($reporteAuditoria['error']))
 <div class="auditoria-card" style="margin-bottom:1.5rem;">
     <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem;">
@@ -111,6 +184,7 @@
                 <div>
                     <div style="font-weight:700; color:#1e293b;">{{ $cursoAuditado['curso'] }}</div>
                     <div style="font-size:12px; color:#64748b;">👨‍🏫 {{ $cursoAuditado['profesor'] }}</div>
+                    <div style="font-size:11px; color:#64748b; margin-top:2px;">📁 {{ $cursoAuditado['categoryname'] ?? 'Sin categoría' }}</div>
                 </div>
                 <div>
                     @if($cursoAuditado['tema_corte'])
@@ -142,17 +216,24 @@
                 <div style="margin-top:0.75rem;">
                     <table style="width:100%; border-collapse:collapse; font-size:12px;">
                         <thead>
-                            <tr><th style="padding:8px; text-align:left;">Tema</th>
+                            <tr style="background:#f1f5f9;">
+                                <th style="padding:8px; text-align:left;">Tema</th>
                                 <th style="padding:8px; text-align:center;">Estado</th>
                                 <th style="padding:8px; text-align:center;">Calificados</th>
                                 <th style="padding:8px; text-align:center;">Sin calificar</th>
-                                <th style="padding:8px; text-align:center;">Entregados tarde</th>
+                                <th style="padding:8px; text-align:center;">No entregaron</th>
+                                <th style="padding:8px; text-align:center;">Justificados<br><span style="font-size:10px;">(entregaron tarde)</span></th>
+                                <th style="padding:8px; text-align:center;">⚠️ Problema<br><span style="font-size:10px;">(entregaron a tiempo)</span></th>
                                 <th style="padding:8px; text-align:left;">Observación</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($cursoAuditado['temas_auditados'] as $tema)
-                            <tr style="border-bottom:1px solid #e2e8f0;">
+                            <tr style="border-bottom:1px solid #e2e8f0;
+                                @if($tema['estado'] == 'ok') background:#f0fdf4;
+                                @elseif($tema['estado'] == 'warning') background:#fefce8;
+                                @else background:#fff1f1;
+                                @endif">
                                 <td style="padding:8px; font-weight:600;">Tema {{ $tema['tema_numero'] }}</td>
                                 <td style="padding:8px; text-align:center;">
                                     @if($tema['estado'] == 'ok') ✅
@@ -161,10 +242,72 @@
                                     @endif
                                 </td>
                                 <td style="padding:8px; text-align:center;">{{ $tema['calificados'] ?? 'N/A' }}</td>
-                                <td style="padding:8px; text-align:center; color:#f59e0b;">{{ $tema['sin_calificar'] ?? 'N/A' }}</td>
-                                <td style="padding:8px; text-align:center;">{{ $tema['entregados_tarde'] ?? 'N/A' }}</td>
-                                <td style="padding:8px; font-size:11px; color:#64748b;">{{ $tema['mensaje'] }}</td>
+                                <td style="padding:8px; text-align:center;">{{ $tema['sin_calificar'] ?? 'N/A' }}</td>
+                                <td style="padding:8px; text-align:center; color:#64748b;">{{ $tema['no_entregaron'] ?? 0 }}</td>
+                                <td style="padding:8px; text-align:center; color:#f59e0b;">{{ $tema['justificados'] ?? 0 }}</td>
+                                <td style="padding:8px; text-align:center; 
+                                    @if(($tema['no_justificados'] ?? 0) > 0) 
+                                        background:#fee2e2; color:#dc2626; font-weight:700; border-radius:4px;
+                                    @else 
+                                        color:#16a34a; 
+                                    @endif">
+                                    @if(($tema['no_justificados'] ?? 0) > 0)
+                                        🔴 {{ $tema['no_justificados'] }}
+                                    @else
+                                        ✅ 0
+                                    @endif
+                                </td>
+                                <td style="padding:8px; font-size:11px;">{{ $tema['mensaje'] }}</td>
                             </tr>
+                            
+                            {{-- Mostrar detalle de actividades si existe --}}
+                            @if(!empty($tema['detalle']))
+                            <tr style="background:#f8fafc;">
+                                <td colspan="8" style="padding:8px 8px 8px 24px; font-size:11px;">
+                                    <details>
+                                        <summary style="cursor:pointer; color:#3b82f6;">📋 Detalle por actividad</summary>
+                                        <table style="width:100%; margin-top:8px; border-collapse:collapse;">
+                                            <thead>
+                                                <tr style="background:#e2e8f0;">
+                                                    <th style="padding:4px; text-align:left;">Actividad</th>
+                                                    <th style="padding:4px; text-align:center;">Tipo</th>
+                                                    <th style="padding:4px; text-align:center;">Sin calificar</th>
+                                                    <th style="padding:4px; text-align:center;">No entregaron</th>
+                                                    <th style="padding:4px; text-align:center;">Justificados<br>(tarde)</th>
+                                                    <th style="padding:4px; text-align:center;">⚠️ Problema<br>(a tiempo)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($tema['detalle'] as $actividad)
+                                                <tr style="border-bottom:1px solid #e2e8f0;">
+                                                    <td style="padding:4px;">{{ $actividad['nombre'] }}</td>
+                                                    <td style="padding:4px; text-align:center;">
+                                                        @if($actividad['tipo'] == 'assign') Tarea
+                                                        @elseif($actividad['tipo'] == 'forum') Foro
+                                                        @elseif($actividad['tipo'] == 'quiz') Examen
+                                                        @endif
+                                                    </td>
+                                                    <td style="padding:4px; text-align:center;">{{ $actividad['sin_calificar'] }}</td>
+                                                    <td style="padding:4px; text-align:center;">{{ $actividad['no_entregaron'] }}</td>
+                                                    <td style="padding:4px; text-align:center; color:#f59e0b;">{{ $actividad['justificados'] }}</td>
+                                                    <td style="padding:4px; text-align:center; 
+                                                        @if($actividad['no_justificados'] > 0) 
+                                                            background:#fee2e2; color:#dc2626; font-weight:700; border-radius:4px;
+                                                        @endif">
+                                                        @if($actividad['no_justificados'] > 0)
+                                                            🔴 {{ $actividad['no_justificados'] }}
+                                                        @else
+                                                            ✅ 0
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </details>
+                                </td>
+                            </tr>
+                            @endif
                             @endforeach
                         </tbody>
                     </table>
@@ -204,7 +347,6 @@
         <div class="metric-value">{{ $totalSinCalificar }}</div>
     </div>
 </div>
-
 
 @if($cursos->isEmpty())
     <div class="card" style="text-align:center; padding:2rem; color:#94a3b8;">
@@ -252,7 +394,7 @@
                         <th style="text-align:center; padding:12px;">No entregados</th>
                         <th style="text-align:center; padding:12px;">Aprobados</th>
                         <th style="text-align:center; padding:12px;">Reprobados</th>
-                    </tr>
+                    </table>
                 </thead>
                 <tbody>
                     @foreach($curso['temas'] as $tema)
@@ -313,7 +455,13 @@
                         <tbody>
                             @foreach($tema['actividades'] as $act)
                             <tr style="border-bottom:1px solid #e2e8f0;">
-                                <td style="padding:8px;">{{ $act['actividad_nombre'] }}</td>
+                                <td style="padding:8px;">
+                                    @if($act['tipo_modulo'] == 'assign') 📝
+                                    @elseif($act['tipo_modulo'] == 'forum') 💬
+                                    @elseif($act['tipo_modulo'] == 'quiz') 📋
+                                    @endif
+                                    {{ $act['actividad_nombre'] }}
+                                </td>
                                 <td style="text-align:center; padding:8px;">{{ $act['tipo_modulo'] }}</td>
                                 <td style="text-align:center; padding:8px;">{{ $act['entregado_a_tiempo'] + $act['entregado_tarde'] }}</td>
                                 <td style="text-align:center; padding:8px;">{{ $act['no_entregado'] }}</td>
@@ -394,6 +542,15 @@
     
     details summary:hover {
         opacity: 0.8;
+    }
+    
+    /* Quitar el triángulo por defecto del summary */
+    .eventos-card details summary {
+        list-style: none;
+    }
+    
+    .eventos-card details summary::-webkit-details-marker {
+        display: none;
     }
     
     /* Estilos para eventos */

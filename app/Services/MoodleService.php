@@ -63,6 +63,12 @@ protected function fetch(string $function, array $params): array
         if ($function === 'local_global_reports_access_teachers_report') {
             $token = env('MOODLE_TOKEN_OTHERS');
         }
+        if ($function === 'local_global_reports_topic_completion_forum_report') {
+            $token = env('MOODLE_TOKEN_OTHERS');
+        }
+        if ($function === 'local_global_reports_topic_completion_quiz_report') {
+            $token = env('MOODLE_TOKEN_OTHERS');
+        }
 
         $response = Http::withOptions(['verify' => $verify])
             ->timeout(200)
@@ -424,6 +430,42 @@ public function getReporteCalificaciones(array $categoryIds = []): array
 
     return $this->fetchAllPaginated(
         'local_global_reports_topic_completion_grades_report',
+        $params
+    );
+}
+
+/**
+ * Obtener reporte de foros
+ */
+public function getReporteForos(array $categoryIds = []): array
+{
+    $categorias = empty($categoryIds) ? $this->categoriasEad : $categoryIds;
+
+    $params = [];
+    foreach ($categorias as $i => $id) {
+        $params["categories[{$i}]"] = $id;
+    }
+
+    return $this->fetchAllPaginated(
+        'local_global_reports_topic_completion_forum_report',
+        $params
+    );
+}
+
+/**
+ * Obtener reporte de exámenes (quiz)
+ */
+public function getReporteExamenes(array $categoryIds = []): array
+{
+    $categorias = empty($categoryIds) ? $this->categoriasEad : $categoryIds;
+
+    $params = [];
+    foreach ($categorias as $i => $id) {
+        $params["categories[{$i}]"] = $id;
+    }
+
+    return $this->fetchAllPaginated(
+        'local_global_reports_topic_completion_quiz_report',
         $params
     );
 }

@@ -35,6 +35,20 @@
    onmouseout="this.style.background='#1a1a2e'">
     ⬇ Descargar completo PDF
 </a>
+<a href="{{ route('docentes.pdf.barchart', request()->query()) }}"
+   target="_blank"
+   style="
+       display:inline-flex; align-items:center; gap:6px;
+       background:#059669; color:#fff;
+       padding:6px 14px; border-radius:6px;
+       font-size:12px; font-weight:600;
+       text-decoration:none;
+       transition: background .2s;
+   "
+   onmouseover="this.style.background='#047857'"
+   onmouseout="this.style.background='#059669'">
+    📊 Descargar gráfica PDF
+</a>
     </div>
 @endsection
 

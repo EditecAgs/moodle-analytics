@@ -23,11 +23,15 @@ Route::middleware(SimpleAuthMiddleware::class)->group(function () {
     // Calificaciones
     
     Route::get('/calificaciones', [CalificacionesController::class, 'index'])->name('calificaciones.index');
+    Route::get('calificaciones/pdf', [CalificacionesController::class, 'descargarPDF'])->name('calificaciones.descargar-pdf');
+    Route::get('/calificaciones/pdf-grafica', [CalificacionesController::class, 'descargarPDFGrafica'])->name('calificaciones.pdf.grafica');
+    Route::get('/calificaciones/chart-image', [ChartImageController::class, 'generarGraficaPastel'])->name('calificaciones.chart-image');
     // Docentes
     Route::get('/docentes',            [DocentesController::class, 'index'])->name('docentes.index');
     Route::get('/docentes/export-pdf', [DocentesController::class, 'exportPdf'])->name('docentes.pdf');
     Route::get('/docentes/pdf-all', [DocentesController::class, 'exportPdfAll'])
     ->name('docentes.pdf.all');
+    Route::get('/docentes/pdf/barchart', [DocentesController::class, 'exportPdfBarChart'])->name('docentes.pdf.barchart');
 
     // Alumnos
     Route::get('/alumnos/riesgo', [AlumnosController::class, 'riesgo'])->name('alumnos.riesgo');

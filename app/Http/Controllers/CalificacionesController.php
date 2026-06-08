@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\MoodleService;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class CalificacionesController extends Controller
 {
@@ -14,18 +15,16 @@ class CalificacionesController extends Controller
     {
         $categoryIds = request()->input('categories', []);
         
-        $raw = $this->moodle->getReporteCalificaciones($categoryIds);
+        $rawActividades = $this->moodle->getReporteCalificaciones($categoryIds);
+        $rawForos = $this->moodle->getReporteForos($categoryIds);
+        $rawExamenes = $this->moodle->getReporteExamenes($categoryIds);
         
-        // Obtener eventos del curso 1507
+        $raw = $this->unificarReportes($rawActividades, $rawForos, $rawExamenes);
         $eventosFiltrados = $this->getEventosCurso1507();
-        
-        // ✅ Procesar auditoría de calificaciones post-academia
         $reporteAuditoria = $this->procesarAuditoriaPostAcademia($raw, $eventosFiltrados);
         
-        // Agrupar por curso → tema → actividades
         $cursos = $this->agruparCursosPorTemas($raw);
         
-        // Totales para KPIs
         $totalCursos = $cursos->count();
         $totalAprobado = $cursos->sum(fn($c) => $c['totales']['aprobados']);
         $totalReprobado = $cursos->sum(fn($c) => $c['totales']['reprobados']);
@@ -42,12 +41,200 @@ class CalificacionesController extends Controller
         ));
     }
     
+    private function unificarReportes(array $actividades, array $foros, array $examenes): array
+    {
+        $unificados = [];
+        
+        foreach ($actividades as $item) {
+            $unificados[] = $this->normalizarActividad($item, 'assign');
+        }
+        
+        foreach ($foros as $item) {
+            $unificados[] = $this->normalizarForo($item);
+        }
+        
+        foreach ($examenes as $item) {
+            $unificados[] = $this->normalizarExamen($item);
+        }
+        
+        return $unificados;
+    }
+    
+    private function normalizarActividad(array $item, string $tipo): array
+    {
+        return [
+            'courseid' => $item['courseid'],
+            'curso' => $item['curso'],
+            'categoryname' => $item['categoryname'],
+            'temas' => $item['temas'],
+            'profesor' => $item['profesor'],
+            'tema_numero' => $item['tema_numero'],
+            'tema' => $item['tema'],
+            'actividad_id' => $item['actividad_id'],
+            'actividad_nombre' => $item['actividad_nombre'],
+            'tipo_modulo' => $tipo,
+            'grade_max' => $item['grade_max'] ?? 100,
+            'grade_pass' => $item['grade_pass'] ?? 70,
+            'fecha_apertura' => $item['fecha_apertura'] ?? null,
+            'fecha_limite' => $item['fecha_limite'] ?? null,
+            'total_alumnos' => $item['total_alumnos'],
+            'no_entregado' => $item['no_entregado'] ?? 0,
+            'entregado_a_tiempo' => $item['entregado_a_tiempo'] ?? 0,
+            'entregado_tarde' => $item['entregado_tarde'] ?? 0,
+            'reopened' => $item['reopened'] ?? 0,
+            'calificados' => $item['calificados'] ?? 0,
+            'sin_calificar' => $item['sin_calificar_total'] ?? $item['sin_calificar'] ?? 0,
+            'aprobados' => $item['aprobados'] ?? 0,
+            'sin_calificar_no_entregaron' => $item['sin_calificar_no_entregaron'] ?? 0,
+            'sin_calificar_entregaron_tiempo' => $item['sin_calificar_entregaron_tiempo'] ?? 0,
+            'sin_calificar_entregaron_tarde' => $item['sin_calificar_entregaron_tarde'] ?? 0,
+        ];
+    }
+    
+    private function normalizarForo(array $item): array
+    {
+        return [
+            'courseid' => $item['courseid'],
+            'curso' => $item['curso'],
+            'categoryname' => $item['categoryname'],
+            'temas' => $item['temas'],
+            'profesor' => $item['profesor'],
+            'tema_numero' => $item['tema_numero'],
+            'tema' => $item['tema'],
+            'actividad_id' => $item['actividad_id'],
+            'actividad_nombre' => $item['actividad_nombre'],
+            'tipo_modulo' => 'forum',
+            'grade_max' => $item['grade_max'] ?? 100,
+            'grade_pass' => $item['grade_pass'] ?? 70,
+            'fecha_apertura' => null,
+            'fecha_limite' => $item['fecha_limite'] ?? null,
+            'total_alumnos' => $item['total_alumnos'],
+            'no_entregado' => $item['no_cumplieron'] ?? 0,
+            'entregado_a_tiempo' => $item['cumplieron_a_tiempo'] ?? 0,
+            'entregado_tarde' => $item['cumplieron_tarde'] ?? 0,
+            'reopened' => 0,
+            'calificados' => $item['calificados'] ?? 0,
+            'sin_calificar' => $item['sin_calificar'] ?? 0,
+            'aprobados' => $item['aprobados'] ?? 0,
+            'cumplieron_actividad' => $item['cumplieron_actividad'] ?? 0,
+            'alumnos_con_disc' => $item['alumnos_con_disc'] ?? 0,
+            'alumnos_con_rep' => $item['alumnos_con_rep'] ?? 0,
+            'criterio_finalizacion' => $item['criterio_finalizacion'] ?? '',
+            'cumplieron_a_tiempo' => $item['cumplieron_a_tiempo'] ?? 0,
+            'cumplieron_tarde' => $item['cumplieron_tarde'] ?? 0,
+            'sin_calificar_entregaron_tiempo' => 0,
+            'sin_calificar_entregaron_tarde' => 0,
+        ];
+    }
+    
+    private function normalizarExamen(array $item): array
+    {
+        $intentaron = $item['intentaron'] ?? 0;
+        $calificados = $item['calificados'] ?? 0;
+        $sinCalificar = $item['sin_calificar'] ?? 0;
+        
+        return [
+            'courseid' => $item['courseid'],
+            'curso' => $item['curso'],
+            'categoryname' => $item['categoryname'],
+            'temas' => $item['temas'],
+            'profesor' => $item['profesor'],
+            'tema_numero' => $item['tema_numero'],
+            'tema' => $item['tema'],
+            'actividad_id' => $item['actividad_id'],
+            'actividad_nombre' => $item['actividad_nombre'],
+            'tipo_modulo' => 'quiz',
+            'grade_max' => $item['grade_max'] ?? 100,
+            'grade_pass' => $item['grade_pass'] ?? 70,
+            'fecha_apertura' => $item['fecha_apertura'] ?? null,
+            'fecha_limite' => $item['fecha_limite'] ?? null,
+            'total_alumnos' => $item['total_alumnos'],
+            'no_entregado' => max(0, $item['total_alumnos'] - $intentaron),
+            'entregado_a_tiempo' => $intentaron,
+            'entregado_tarde' => 0,
+            'reopened' => 0,
+            'calificados' => $calificados,
+            'sin_calificar' => $sinCalificar,
+            'aprobados' => $item['aprobados'] ?? 0,
+            'intentaron' => $intentaron,
+            'sin_calificar_entregaron_tiempo' => max(0, $intentaron - $calificados),
+            'sin_calificar_entregaron_tarde' => 0,
+        ];
+    }
+    
     /**
-     * ✅ MÉTODO CORREGIDO: Auditar TODOS los temas con cierre anterior a la academia
+     * Obtener estudiantes que NO entregaron
+     */
+    private function obtenerNoEntregaron($actividad): int
+    {
+        return $actividad['no_entregado'] ?? 0;
+    }
+    
+    /**
+     * Calcular justificados (entregaron tarde)
+     */
+    private function calcularJustificados($actividad): int
+    {
+        switch ($actividad['tipo_modulo']) {
+            case 'assign':
+                return $actividad['sin_calificar_entregaron_tarde'] ?? 0;
+            case 'forum':
+                // Los que cumplieron tarde son JUSTIFICADOS
+                return $actividad['entregado_tarde'] ?? 0;
+            case 'quiz':
+                return 0;
+            default:
+                return 0;
+        }
+    }
+    
+    /**
+     * ✅ CORREGIDO: Calcular no justificados (entregaron a tiempo pero NO calificados)
+     * 
+     * La lógica mejorada:
+     * - Para ASSIGN: usamos sin_calificar_entregaron_tiempo directamente
+     * - Para FORUM: priorizamos calificados a los que entregaron a tiempo
+     * - Para QUIZ: calculamos basado en intentos vs calificados
+     */
+    private function calcularNoJustificados($actividad): int
+    {
+        switch ($actividad['tipo_modulo']) {
+            case 'assign':
+                return $actividad['sin_calificar_entregaron_tiempo'] ?? 0;
+                
+            case 'forum':
+                // FÓRMULA CORREGIDA PARA FOROS:
+                // Los calificados se asignan PRIORITARIAMENTE a los que entregaron a tiempo
+                // Los que entregaron tarde son JUSTIFICADOS automáticamente
+                
+                $cumplieronATiempo = $actividad['entregado_a_tiempo'] ?? 0;
+                $cumplieronTarde = $actividad['entregado_tarde'] ?? 0;
+                $calificados = $actividad['calificados'] ?? 0;
+                
+                // Asumimos que el profesor califica PRIMERO a los que entregaron a tiempo
+                // y luego si tiene tiempo, a los que entregaron tarde
+                $calificadosDeTiempo = min($cumplieronATiempo, $calificados);
+                
+                // Los que entregaron a tiempo pero NO están calificados son el problema
+                $noJustificados = max(0, $cumplieronATiempo - $calificadosDeTiempo);
+                
+                return $noJustificados;
+                
+            case 'quiz':
+                $intentaron = $actividad['intentaron'] ?? 0;
+                $calificados = $actividad['calificados'] ?? 0;
+                return max(0, $intentaron - $calificados);
+                
+            default:
+                return $actividad['sin_calificar'] ?? 0;
+        }
+    }
+    
+    /**
+     * Procesar auditoría post-academia
      */
     private function procesarAuditoriaPostAcademia($raw, $eventosFiltrados): array
     {
-        // 1. Encontrar la última reunión de academia
         $reunionesAcademia = collect($eventosFiltrados)->filter(function($evento) {
             return str_contains($evento['name'], 'Reunión') || 
                    str_contains($evento['name'], 'reunión') ||
@@ -60,14 +247,10 @@ class CalificacionesController extends Controller
         
         $ultimaAcademia = $reunionesAcademia->first();
         $fechaAcademia = Carbon::createFromTimestamp($ultimaAcademia['timestart']);
-        
-        // 2. Calcular 1 semana después (5 días hábiles, sin contar fines de semana)
         $fechaReporte = $this->sumarDiasHabiles($fechaAcademia, 5);
         
-        // 3. Agrupar actividades por curso
         $actividadesPorCurso = collect($raw)->groupBy('courseid');
         
-        // 4. Obtener todos los eventos de cierre
         $eventosCierre = collect($eventosFiltrados)->filter(function($evento) {
             return preg_match('/T\d+: Cierre T\d+/', $evento['name']);
         });
@@ -78,69 +261,56 @@ class CalificacionesController extends Controller
             'cursos' => []
         ];
         
-        // 5. Procesar cada curso INDIVIDUALMENTE
         foreach ($actividadesPorCurso as $courseId => $actividades) {
             $primerActividad = $actividades->first();
             $nombreCurso = $primerActividad['curso'];
             $profesor = $primerActividad['profesor'];
             $totalTemasCurso = $primerActividad['temas'];
             
-            // 🔍 Buscar el último tema que cerró ANTES de la academia
+            // Buscar tema de corte
             $temaCorte = 0;
             $fechaCorte = null;
-            $eventoCorte = null;
             
             foreach ($eventosCierre as $evento) {
-                // Patrón: T5: Cierre T3
                 if (preg_match('/T(\d+): Cierre T(\d+)/', $evento['name'], $matches)) {
                     $temasDelEvento = (int)$matches[1];
                     $temaNumeroCierre = (int)$matches[2];
                     
-                    // Solo eventos que corresponden a la cantidad de temas de ESTE curso
                     if ($temasDelEvento == $totalTemasCurso) {
                         $fechaEvento = Carbon::createFromTimestamp($evento['timestart']);
                         
-                        // ✅ El tema cerró ANTES o IGUAL a la academia
                         if ($fechaEvento->lte($fechaAcademia)) {
-                            // Tomar el de mayor número de tema (el último cierre)
                             if ($temaNumeroCierre > $temaCorte) {
                                 $temaCorte = $temaNumeroCierre;
                                 $fechaCorte = $fechaEvento;
-                                $eventoCorte = $evento;
                             }
                         }
                     }
                 }
             }
             
-            // Si no hay evento de cierre para este curso
             if ($temaCorte == 0) {
                 $reporte['cursos'][] = [
                     'courseid' => $courseId,
                     'curso' => $nombreCurso,
+                    'categoryname' => $primerActividad['categoryname'] ?? 'Sin categoría',
                     'profesor' => $profesor,
                     'total_temas' => $totalTemasCurso,
                     'tema_corte' => null,
                     'estado' => 'warning',
-                    'mensaje' => "No se encontró evento de cierre T{$totalTemasCurso}: Cierre Tn para este curso",
+                    'mensaje' => "No se encontró evento de cierre para este curso",
                     'temas_auditados' => []
                 ];
                 continue;
             }
             
-            // ✅ CORRECCIÓN: Los temas a auditar son TODOS desde T1 hasta TEMA_CORTE (inclusive)
-            // Porque todos ellos tienen fecha de cierre anterior a la academia
             $temasAAuditar = range(1, $temaCorte);
-            
-            // Agrupar actividades por tema
             $actividadesPorTema = $actividades->groupBy('tema_numero');
             
             $temasAuditados = [];
-            $todosOk = true;
             $hayErrores = false;
             $hayWarnings = false;
             
-            // Auditar cada tema (T1 hasta TEMA_CORTE)
             foreach ($temasAAuditar as $temaNum) {
                 $actividadesTema = $actividadesPorTema->get($temaNum, collect());
                 
@@ -150,72 +320,101 @@ class CalificacionesController extends Controller
                         'estado' => 'warning',
                         'mensaje' => '⚠️ No hay actividades registradas para este tema',
                         'sin_calificar' => 0,
-                        'entregados_tarde' => 0,
+                        'no_entregaron' => 0,
+                        'justificados' => 0,
+                        'no_justificados' => 0,
                         'calificados' => 0,
                         'total_alumnos' => $primerActividad['total_alumnos'] ?? 0
                     ];
-                    $todosOk = false;
                     $hayWarnings = true;
                     continue;
                 }
                 
-                // Verificar calificaciones del tema
-                $totalSinCalificar = $actividadesTema->sum('sin_calificar');
-                $totalEntregadosTarde = $actividadesTema->sum('entregado_tarde');
-                $totalCalificados = $actividadesTema->sum('calificados');
+                $totalSinCalificar = 0;
+                $totalNoEntregaron = 0;
+                $totalJustificados = 0;
+                $totalNoJustificados = 0;
+                $totalCalificados = 0;
                 $totalAlumnos = $actividadesTema->first()['total_alumnos'];
+                $detalleActividades = [];
                 
-                // REGLA DE NEGOCIO: 
-                // Los sin_calificar están justificados SOLO si son menores o iguales a los entregados_tarde
-                $justificado = ($totalSinCalificar <= $totalEntregadosTarde);
+                foreach ($actividadesTema as $actividad) {
+                    $sinCalificar = $actividad['sin_calificar'];
+                    $noEntregaron = $this->obtenerNoEntregaron($actividad);
+                    $justificados = $this->calcularJustificados($actividad);
+                    $noJustificados = $this->calcularNoJustificados($actividad);
+                    
+                    $totalSinCalificar += $sinCalificar;
+                    $totalNoEntregaron += $noEntregaron;
+                    $totalJustificados += $justificados;
+                    $totalNoJustificados += $noJustificados;
+                    $totalCalificados += $actividad['calificados'];
+                    
+                    $detalleActividades[] = [
+                        'nombre' => $actividad['actividad_nombre'],
+                        'tipo' => $actividad['tipo_modulo'],
+                        'sin_calificar' => $sinCalificar,
+                        'no_entregaron' => $noEntregaron,
+                        'justificados' => $justificados,
+                        'no_justificados' => $noJustificados
+                    ];
+                }
                 
-                // ✅ Determinar si es el tema de corte o uno anterior
                 $esTemaCorte = ($temaNum == $temaCorte);
                 
+                // Evaluación del estado del tema
                 if ($totalSinCalificar == 0) {
-                    // ✅ Todo calificado
                     $temasAuditados[] = [
                         'tema_numero' => $temaNum,
                         'estado' => 'ok',
                         'mensaje' => $esTemaCorte ? '✅ Tema de corte - Completamente calificado' : '✅ Completamente calificado',
                         'sin_calificar' => 0,
-                        'entregados_tarde' => $totalEntregadosTarde,
+                        'no_entregaron' => 0,
+                        'justificados' => 0,
+                        'no_justificados' => 0,
                         'calificados' => $totalCalificados,
                         'total_alumnos' => $totalAlumnos,
-                        'es_tema_corte' => $esTemaCorte
+                        'detalle' => $detalleActividades
                     ];
-                } elseif ($justificado) {
-                    // ⚠️ Hay sin_calificar pero son todos entregados tarde (válido - derecho del profesor)
+                } elseif ($totalNoJustificados == 0) {
+                    // Solo hay justificados (entregas tardías) o no entregaron
+                    $mensaje = $esTemaCorte 
+                        ? ""
+                        : "";
+                    
+                    if ($totalNoEntregaron > 0) {
+                        $mensaje .= "";
+                    }
+                    
                     $temasAuditados[] = [
                         'tema_numero' => $temaNum,
                         'estado' => 'warning',
-                        'mensaje' => $esTemaCorte 
-                            ? "⚠️ Tema de corte - {$totalSinCalificar} sin calificar (justificado: son entregas tardías)"
-                            : "⚠️ {$totalSinCalificar} sin calificar (justificado: son entregas tardías)",
+                        'mensaje' => $mensaje,
                         'sin_calificar' => $totalSinCalificar,
-                        'entregados_tarde' => $totalEntregadosTarde,
+                        'no_entregaron' => $totalNoEntregaron,
+                        'justificados' => $totalJustificados,
+                        'no_justificados' => 0,
                         'calificados' => $totalCalificados,
                         'total_alumnos' => $totalAlumnos,
-                        'es_tema_corte' => $esTemaCorte
+                        'detalle' => $detalleActividades
                     ];
                     $hayWarnings = true;
-                    // NOTA: Esto es warning, NO es error porque el profesor tiene derecho a no calificar tardíos
                 } else {
-                    // ❌ Sin calificar no justificado - ERROR
-                    $sinJustificar = $totalSinCalificar - $totalEntregadosTarde;
+                    // PROBLEMA REAL: estudiantes que entregaron a tiempo y no están calificados
                     $temasAuditados[] = [
                         'tema_numero' => $temaNum,
                         'estado' => 'error',
                         'mensaje' => $esTemaCorte
-                            ? "❌ Tema de corte - {$sinJustificar} estudiante(s) sin calificar que SÍ entregaron a tiempo"
-                            : "❌ {$sinJustificar} estudiante(s) sin calificar que SÍ entregaron a tiempo",
+                            ? "❌ TEMA DE CORTE - {$totalNoJustificados} entrega(s) A TIEMPO y NO están calificados"
+                            : "❌ {$totalNoJustificados} entrega(s) A TIEMPO y NO están calificados",
                         'sin_calificar' => $totalSinCalificar,
-                        'entregados_tarde' => $totalEntregadosTarde,
+                        'no_entregaron' => $totalNoEntregaron,
+                        'justificados' => $totalJustificados,
+                        'no_justificados' => $totalNoJustificados,
                         'calificados' => $totalCalificados,
                         'total_alumnos' => $totalAlumnos,
-                        'es_tema_corte' => $esTemaCorte
+                        'detalle' => $detalleActividades
                     ];
-                    $todosOk = false;
                     $hayErrores = true;
                 }
             }
@@ -223,18 +422,19 @@ class CalificacionesController extends Controller
             // Determinar estado general del curso
             if ($hayErrores) {
                 $estadoGeneral = 'error';
-                $mensajeGeneral = "❌ Tema de corte T{$temaCorte} (cerró el {$fechaCorte->format('d/m/Y')}) - Hay temas SIN CALIFICAR que entregaron a tiempo";
+                $mensajeGeneral = "❌ Tema de corte T{$temaCorte} - Hay estudiantes que entregaron A TIEMPO y NO están calificados";
             } elseif ($hayWarnings) {
                 $estadoGeneral = 'warning';
-                $mensajeGeneral = "⚠️ Tema de corte T{$temaCorte} (cerró el {$fechaCorte->format('d/m/Y')}) - Hay sin calificar pero JUSTIFICADOS (entregas tardías)";
+                $mensajeGeneral = "";
             } else {
                 $estadoGeneral = 'ok';
-                $mensajeGeneral = "✅ Tema de corte T{$temaCorte} (cerró el {$fechaCorte->format('d/m/Y')}) - TODOS los temas están calificados correctamente";
+                $mensajeGeneral = "";
             }
             
             $reporte['cursos'][] = [
                 'courseid' => $courseId,
                 'curso' => $nombreCurso,
+                'categoryname' => $primerActividad['categoryname'] ?? 'Sin categoría',
                 'profesor' => $profesor,
                 'total_temas' => $totalTemasCurso,
                 'tema_corte' => $temaCorte,
@@ -248,20 +448,15 @@ class CalificacionesController extends Controller
             ];
         }
         
-        // Ordenar cursos: primero los que tienen error, luego warning, luego ok
         $reporte['cursos'] = collect($reporte['cursos'])->sortBy(function($curso) {
             if ($curso['estado'] == 'error') return 0;
             if ($curso['estado'] == 'warning') return 1;
-            if ($curso['estado'] == 'info') return 2;
-            return 3;
+            return 2;
         })->values()->toArray();
         
         return $reporte;
     }
     
-    /**
-     * Sumar días hábiles a una fecha (lunes a viernes)
-     */
     private function sumarDiasHabiles(Carbon $fecha, int $dias): Carbon
     {
         $resultado = clone $fecha;
@@ -277,9 +472,6 @@ class CalificacionesController extends Controller
         return $resultado;
     }
     
-    /**
-     * Agrupar cursos por temas
-     */
     private function agruparCursosPorTemas($raw): Collection
     {
         return collect($raw)
@@ -300,7 +492,7 @@ class CalificacionesController extends Controller
                         $totalEntregados = $actividadesTema->sum('entregado_a_tiempo') + $actividadesTema->sum('entregado_tarde');
                         $totalNoEntregados = $actividadesTema->sum('no_entregado');
                         
-                        $aprobados = $totalCalificados;
+                        $aprobados = $actividadesTema->sum('aprobados');
                         $reprobados = 0;
                         
                         return [
@@ -328,6 +520,10 @@ class CalificacionesController extends Controller
                                 'grade_max' => $a['grade_max'] ?? 100,
                                 'fecha_apertura' => $a['fecha_apertura'],
                                 'fecha_limite' => $a['fecha_limite'],
+                                'criterio_finalizacion' => $a['criterio_finalizacion'] ?? null,
+                                'alumnos_con_disc' => $a['alumnos_con_disc'] ?? null,
+                                'alumnos_con_rep' => $a['alumnos_con_rep'] ?? null,
+                                'intentaron' => $a['intentaron'] ?? null,
                             ])->values()->toArray(),
                         ];
                     })->values()->toArray();
@@ -356,20 +552,15 @@ class CalificacionesController extends Controller
             ->values();
     }
     
-    /**
-     * Obtener eventos del curso 1507 filtrados por "Cierre" y "Reunión de Academia"
-     */
     private function getEventosCurso1507(): array
     {
         $cursoId = 1507;
-        
         $eventos = $this->moodle->getEventos([$cursoId]);
         
         $palabrasClave = ['Cierre', 'Reunión', 'reunión', 'Reunion', 'reunion', 'Academia', 'academia'];
         
         $eventosFiltrados = collect($eventos)->filter(function ($evento) use ($palabrasClave) {
             $nombre = $evento['name'] ?? '';
-            
             foreach ($palabrasClave as $palabra) {
                 if (str_contains($nombre, $palabra)) {
                     return true;
@@ -392,4 +583,237 @@ class CalificacionesController extends Controller
         
         return $eventosFiltrados;
     }
+
+    public function descargarPDF()
+    {
+        $categoryIds = request()->input('categories', []);
+        
+        $rawActividades = $this->moodle->getReporteCalificaciones($categoryIds);
+        $rawForos = $this->moodle->getReporteForos($categoryIds);
+        $rawExamenes = $this->moodle->getReporteExamenes($categoryIds);
+        $raw = $this->unificarReportes($rawActividades, $rawForos, $rawExamenes);
+        $eventosFiltrados = $this->getEventosCurso1507();
+        $reporteAuditoria = $this->procesarAuditoriaPostAcademia($raw, $eventosFiltrados);
+        
+        $datosPDF = $this->prepararDatosParaPDF($reporteAuditoria);
+        
+        $pdf = PDF::loadView('pdf.auditoria_calificaciones', $datosPDF);
+        $pdf->setPaper('a4', 'landscape');
+        
+        return $pdf->download('auditoria_calificaciones_' . now()->format('Ymd_His') . '.pdf');
+    }
+    
+private function prepararDatosParaPDF(array $reporteAuditoria): array
+{
+    $cursosReporte = [];
+
+    $cursosConError = collect($reporteAuditoria['cursos'])
+        ->where('estado', 'error');
+
+    foreach ($cursosConError as $curso) {
+
+        $seguimiento = [];
+        $observaciones = [];
+
+        if (isset($curso['temas_auditados']) && !empty($curso['temas_auditados'])) {
+
+            foreach ($curso['temas_auditados'] as $tema) {
+
+                $temaNum = $tema['tema_numero'];
+
+                if ($tema['estado'] == 'error') {
+                    $seguimiento[] = "Falta T{$temaNum}";
+                    $observaciones[] = "T{$temaNum}: " . $tema['mensaje'];
+                }
+            }
+        }
+
+        $cursosReporte[] = [
+            'curso' => $curso['curso'],
+            'categoria' => $curso['categoryname'] ?? 'Sin categoría',
+            'profesor' => $curso['profesor'],
+            'tema_corte' => $curso['tema_corte'] ?? 'N/A',
+            'seguimiento' => implode(' · ', $seguimiento),
+            'observaciones' => !empty($observaciones)
+                ? implode(' | ', $observaciones)
+                : 'Sin observaciones',
+            'estado' => $curso['estado'],
+            'mensaje' => $curso['mensaje']
+        ];
+    }
+
+    return [
+        'cursos' => $cursosReporte,
+        'fecha_academia' => $reporteAuditoria['fecha_academia'],
+        'fecha_reporte' => $reporteAuditoria['fecha_reporte'],
+        'total_cursos' => count($cursosReporte),
+        'cursos_error' => count($cursosReporte),
+        'cursos_warning' => 0,
+        'cursos_ok' => 0
+    ];
+}
+    /**
+ * Exportar PDF con gráfica de pastel de estados de calificación por curso
+ * Basado en los temas que YA DEBÍAN estar calificados (hasta el tema de corte)
+ */
+public function descargarPDFGrafica()
+{
+    $categoryIds = request()->input('categories', []);
+    
+    // Obtener los mismos datos que en index()
+    $rawActividades = $this->moodle->getReporteCalificaciones($categoryIds);
+    $rawForos = $this->moodle->getReporteForos($categoryIds);
+    $rawExamenes = $this->moodle->getReporteExamenes($categoryIds);
+    
+    $raw = $this->unificarReportes($rawActividades, $rawForos, $rawExamenes);
+    $eventosFiltrados = $this->getEventosCurso1507();
+    
+    // Generar el reporte de auditoría (que ya tiene la lógica de temas que debían estar calificados)
+    $reporteAuditoria = $this->procesarAuditoriaPostAcademia($raw, $eventosFiltrados);
+    
+    // Analizar estado de calificación por curso usando el reporte de auditoría
+    $estadosCursos = $this->analizarEstadosDesdeAuditoria($reporteAuditoria);
+    
+    // Preparar datos para la gráfica de pastel
+    $datosGrafica = [
+        'labels' => [],
+        'data' => [],
+        'colors' => [],
+        'total_cursos' => $estadosCursos['total']
+    ];
+    
+    foreach ($estadosCursos['detalle'] as $key => $estado) {
+        if ($estado['count'] > 0) {
+            $datosGrafica['labels'][] = $estado['label'];
+            $datosGrafica['data'][] = $estado['count'];
+            $datosGrafica['colors'][] = $estado['color'];
+        }
+    }
+    
+    $pdf = PDF::loadView('pdf.grafica_calificaciones_cursos', [
+        'datosGrafica' => $datosGrafica,
+        'estadosCursos' => $estadosCursos,
+        'reporteAuditoria' => $reporteAuditoria,
+        'fechaGeneracion' => now()->format('d/m/Y H:i:s')
+    ]);
+    $pdf->setPaper('a4', 'landscape');
+    
+    return $pdf->download('reporte_estados_calificacion_' . now()->format('Ymd_His') . '.pdf');
+}
+
+/**
+ * Analizar el estado de calificación de cada curso
+ * Basado en el reporte de auditoría (temas que debían estar calificados hasta el corte)
+ * 
+ * Estados:
+ * - CALIFICADO COMPLETO: Todos los temas hasta el corte están calificados
+ * - 1 UNIDAD POR CALIFICAR: Exactamente 1 tema sin calificar (que debía estar calificado)
+ * - MÚLTIPLES UNIDADES POR CALIFICAR: Más de 1 tema sin calificar (que debían estar calificados)
+ * - NO CALIFICADO: Ningún tema calificado (de los que debían estar)
+ */
+/**
+ * Analizar el estado de calificación de cada curso
+ * Basado en el reporte de auditoría (temas que debían estar calificados hasta el corte)
+ * 
+ * NOTA: Los cursos con estado 'warning' (entregas tardías / justificados) se consideran
+ * como "Completamente calificado" porque no hay estudiantes que entregaron a tiempo sin calificar.
+ */
+private function analizarEstadosDesdeAuditoria($reporteAuditoria): array
+{
+    $estados = [
+        'calificado_completo' => [
+            'label' => '✅ Completamente calificado (incluye justificados)',
+            'count' => 0,
+            'color' => '#10b981',
+            'cursos' => []
+        ],
+        'una_unidad' => [
+            'label' => '📌 1 unidad por calificar (debió estarlo)',
+            'count' => 0,
+            'color' => '#3b82f6',
+            'cursos' => []
+        ],
+        'multiples_unidades' => [
+            'label' => '⚠️ Múltiples unidades por calificar (>1)',
+            'count' => 0,
+            'color' => '#f59e0b',
+            'cursos' => []
+        ],
+        'no_calificado' => [
+            'label' => '❌ No calificado (0 unidades de las debidas)',
+            'count' => 0,
+            'color' => '#ef4444',
+            'cursos' => []
+        ]
+    ];
+    
+    foreach ($reporteAuditoria['cursos'] as $cursoAuditado) {
+        // Saltar cursos sin tema de corte
+        if (!isset($cursoAuditado['tema_corte']) || $cursoAuditado['tema_corte'] === null) {
+            continue;
+        }
+        
+        $temasAuditados = $cursoAuditado['temas_auditados'] ?? [];
+        $totalTemasDebidos = count($temasAuditados);
+        
+        // Contar temas con ERROR REAL (entregaron a tiempo sin calificar)
+        // Los temas con estado 'warning' (justificados) NO cuentan como error
+        $temasConError = 0;
+        $temasCalificadosOk = 0;
+        
+        foreach ($temasAuditados as $tema) {
+            // Solo error si es 'error' Y tiene no_justificados > 0
+            if ($tema['estado'] == 'error' && ($tema['no_justificados'] ?? 0) > 0) {
+                $temasConError++;
+            } else {
+                $temasCalificadosOk++;
+            }
+        }
+        
+        $infoCurso = [
+            'courseid' => $cursoAuditado['courseid'],
+            'curso' => $cursoAuditado['curso'],
+            'categoryname' => $cursoAuditado['categoryname'],
+            'profesor' => $cursoAuditado['profesor'],
+            'tema_corte' => $cursoAuditado['tema_corte'],
+            'total_temas_debidos' => $totalTemasDebidos,
+            'temas_calificados_ok' => $temasCalificadosOk,
+            'temas_con_problema' => $temasConError,
+            'detalle_temas' => $temasAuditados,
+            'estado_original' => $cursoAuditado['estado'] // guardamos para debug
+        ];
+        
+        // Clasificar según el estado (ahora los warning van a calificado_completo)
+        if ($temasConError == 0) {
+            // No hay errores reales -> todos los temas están OK (incluye warning)
+            $estados['calificado_completo']['count']++;
+            $estados['calificado_completo']['cursos'][] = $infoCurso;
+        } elseif ($temasConError == $totalTemasDebidos) {
+            // Todos los temas tienen error
+            $estados['no_calificado']['count']++;
+            $estados['no_calificado']['cursos'][] = $infoCurso;
+        } elseif ($temasConError == 1) {
+            // Exactamente 1 tema con error
+            $estados['una_unidad']['count']++;
+            $estados['una_unidad']['cursos'][] = $infoCurso;
+        } else {
+            // Más de 1 tema con error
+            $estados['multiples_unidades']['count']++;
+            $estados['multiples_unidades']['cursos'][] = $infoCurso;
+        }
+    }
+    
+    return [
+        'total' => $reporteAuditoria['total_cursos'] ?? count($reporteAuditoria['cursos']),
+        'fecha_academia' => $reporteAuditoria['fecha_academia'],
+        'fecha_reporte' => $reporteAuditoria['fecha_reporte'],
+        'detalle' => $estados,
+        'resumen' => [
+            'calificados' => $estados['calificado_completo']['count'],
+            'por_calificar' => $estados['multiples_unidades']['count'] + $estados['una_unidad']['count'],
+            'criticos' => $estados['no_calificado']['count']
+        ]
+    ];
+}
+
 }
