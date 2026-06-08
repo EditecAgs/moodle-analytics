@@ -1,0 +1,33 @@
+name: deploy_moodle_analytics
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Test]
+
+    steps:
+      - name: Deploy Laravel
+        run: |
+          cd /var/www/html/moodle-analytics
+
+          git fetch origin
+          git reset --hard origin/main
+
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+
+          php artisan migrate --force
+
+          php artisan config:clear
+          php artisan cache:clear
+          php artisan route:clear
+          php artisan view:clear
+
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+
+          chmod -R 775 storage bootstrap/cache
