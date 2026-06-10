@@ -10,13 +10,14 @@
     <a href="{{ route('calificaciones.descargar-pdf', request()->query()) }}" 
        target="_blank"
        style="background:#dc2626; color:white; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px; display:inline-flex; align-items:center; gap:6px;">
-        📄 Descargar PDF
+        📄 Descargar PDF Rojos
     </a>
-    <a href="{{ route('calificaciones.pdf.grafica', request()->query()) }}" 
+    
+   <!-- <a href="{{ route('calificaciones.pdf.grafica', request()->query()) }}" 
    target="_blank"
    style="background:#059669; color:white; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px; display:inline-flex; align-items:center; gap:6px;">
     🥧 Descargar gráfica de pastel
-</a>
+</a>-->
 </div>
 @endsection
 
@@ -149,7 +150,7 @@
 <div class="auditoria-card" style="margin-bottom:1.5rem;">
     <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem;">
         <span style="font-size:20px;">🔍</span>
-        <h3 style="margin:0; color:#1e293b;">Auditoría de Calificaciones</h3>
+        <h3 style="margin:0; color:#1e293b;">Reporte de Calificaciones</h3>
         <span class="badge badge-purple">Post-academia</span>
     </div>
     
@@ -322,164 +323,13 @@
 <div class="card" style="background:#fee2e2; border-left:4px solid #ef4444; margin-bottom:1.5rem;">
     <div style="display:flex; align-items:center; gap:0.5rem;">
         <span>⚠️</span>
-        <span style="font-weight:600;">Error en auditoría:</span>
+        <span style="font-weight:600;">Error en Reporte de Calificaciones:</span>
         <span>{{ $reporteAuditoria['error'] }}</span>
     </div>
 </div>
 @endif
 
-{{-- KPIs --}}
-<div class="metric-grid">
-    <div class="metric-card purple">
-        <div class="metric-label">Total cursos</div>
-        <div class="metric-value">{{ $totalCursos }}</div>
-    </div>
-    <div class="metric-card green">
-        <div class="metric-label">Aprobados</div>
-        <div class="metric-value">{{ $totalAprobado }}</div>
-    </div>
-    <div class="metric-card red">
-        <div class="metric-label">Reprobados</div>
-        <div class="metric-value">{{ $totalReprobado }}</div>
-    </div>
-    <div class="metric-card amber">
-        <div class="metric-label">Sin calificar</div>
-        <div class="metric-value">{{ $totalSinCalificar }}</div>
-    </div>
-</div>
-
-@if($cursos->isEmpty())
-    <div class="card" style="text-align:center; padding:2rem; color:#94a3b8;">
-        No se encontraron datos para los filtros seleccionados.
-    </div>
-@else
-    @foreach($cursos as $curso)
-    <div class="card" style="margin-bottom:2rem;">
         
-        {{-- Encabezado del curso --}}
-        <div style="margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:2px solid #e2e8f0;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem;">
-                <div>
-                    <div style="font-size:18px; font-weight:700; color:#1a1a2e;">
-                        {{ $curso['curso'] }}
-                    </div>
-                    <div style="font-size:13px; color:#64748b; margin-top:4px;">
-                        <span style="background:#e2e8f0; padding:2px 8px; border-radius:4px;">
-                            📁 {{ $curso['categoryname'] }}
-                        </span>
-                        <span style="margin-left:8px;">Docente: {{ $curso['profesor'] }}</span>
-                        <span style="margin-left:8px;">Alumnos: {{ $curso['total_alumnos'] }}</span>
-                    </div>
-                </div>
-                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                    <span class="badge badge-green">✓ {{ $curso['totales']['aprobados'] }} aprobados</span>
-                    <span class="badge badge-red">✗ {{ $curso['totales']['reprobados'] }} reprobados</span>
-                    <span class="badge badge-amber">⏳ {{ $curso['totales']['total_sin_calificar'] }} sin calificar</span>
-                    <span class="badge badge-purple">🔄 {{ $curso['totales']['total_reabiertos'] }} reabiertos</span>
-                </div>
-            </div>
-        </div>
-        
-        {{-- Tabla por temas --}}
-        <div class="table-wrap">
-            <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                <thead>
-                    <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
-                        <th style="text-align:left; padding:12px;">Tema</th>
-                        <th style="text-align:center; padding:12px;">Total alumnos</th>
-                        <th style="text-align:center; padding:12px;">Calificados</th>
-                        <th style="text-align:center; padding:12px;">Sin calificar</th>
-                        <th style="text-align:center; padding:12px;">Reabiertos</th>
-                        <th style="text-align:center; padding:12px;">Entregados</th>
-                        <th style="text-align:center; padding:12px;">No entregados</th>
-                        <th style="text-align:center; padding:12px;">Aprobados</th>
-                        <th style="text-align:center; padding:12px;">Reprobados</th>
-                    </table>
-                </thead>
-                <tbody>
-                    @foreach($curso['temas'] as $tema)
-                    @php
-                        $bgColor = $loop->iteration % 2 == 0 ? '#f8fafc' : 'white';
-                    @endphp
-                    <tr style="background:{{ $bgColor }}; border-bottom:1px solid #e2e8f0;">
-                        <td style="padding:12px;">
-                            <strong>Tema {{ $tema['tema_numero'] }}</strong><br>
-                            <span style="font-size:11px; color:#64748b;">{{ $tema['tema'] }}</span>
-                        </td>
-                        <td style="text-align:center; padding:12px; font-weight:600;">{{ $tema['total_alumnos'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#16a34a; font-weight:600;">{{ $tema['total_calificados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#f59e0b;">{{ $tema['total_sin_calificar'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#8b5cf6;">{{ $tema['total_reabiertos'] }}</td>
-                        <td style="text-align:center; padding:12px;">{{ $tema['total_entregados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#dc2626;">{{ $tema['total_no_entregados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#16a34a;">{{ $tema['aprobados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#dc2626;">{{ $tema['reprobados'] }}</td>
-                    </tr>
-                    @endforeach
-                    
-                    {{-- Fila de totales del curso --}}
-                    <tr style="background:#e2e8f0; font-weight:700; border-top:2px solid #94a3b8;">
-                        <td style="padding:12px;"><strong>TOTAL CURSO</strong></td>
-                        <td style="text-align:center; padding:12px;">{{ $curso['total_alumnos'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#16a34a;">{{ $curso['totales']['total_calificados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#f59e0b;">{{ $curso['totales']['total_sin_calificar'] }}</td>
-                        <td style="text-align:center; padding:12px;">{{ $curso['totales']['total_reabiertos'] }}</td>
-                        <td style="text-align:center; padding:12px;">{{ $curso['totales']['total_entregados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#dc2626;">{{ $curso['totales']['total_no_entregados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#16a34a;">{{ $curso['totales']['aprobados'] }}</td>
-                        <td style="text-align:center; padding:12px; color:#dc2626;">{{ $curso['totales']['reprobados'] }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        {{-- Expandir para ver actividades (opcional) --}}
-        <details style="margin-top:1rem;">
-            <summary style="cursor:pointer; color:#3b82f6; font-size:12px; font-weight:600;">📋 Ver actividades por tema</summary>
-            <div style="margin-top:1rem;">
-                @foreach($curso['temas'] as $tema)
-                <div style="margin-bottom:1.5rem;">
-                    <div style="font-weight:600; margin-bottom:0.5rem;">Tema {{ $tema['tema_numero'] }}: {{ $tema['tema'] }}</div>
-                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
-                        <thead>
-                            <tr style="background:#f8fafc;">
-                                <th style="padding:8px; text-align:left;">Actividad</th>
-                                <th style="padding:8px; text-align:center;">Tipo</th>
-                                <th style="padding:8px; text-align:center;">Entregados</th>
-                                <th style="padding:8px; text-align:center;">No entregados</th>
-                                <th style="padding:8px; text-align:center;">Calificados</th>
-                                <th style="padding:8px; text-align:center;">Sin calificar</th>
-                                <th style="padding:8px; text-align:center;">Reabiertos</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($tema['actividades'] as $act)
-                            <tr style="border-bottom:1px solid #e2e8f0;">
-                                <td style="padding:8px;">
-                                    @if($act['tipo_modulo'] == 'assign') 📝
-                                    @elseif($act['tipo_modulo'] == 'forum') 💬
-                                    @elseif($act['tipo_modulo'] == 'quiz') 📋
-                                    @endif
-                                    {{ $act['actividad_nombre'] }}
-                                </td>
-                                <td style="text-align:center; padding:8px;">{{ $act['tipo_modulo'] }}</td>
-                                <td style="text-align:center; padding:8px;">{{ $act['entregado_a_tiempo'] + $act['entregado_tarde'] }}</td>
-                                <td style="text-align:center; padding:8px;">{{ $act['no_entregado'] }}</td>
-                                <td style="text-align:center; padding:8px; color:#16a34a;">{{ $act['calificados'] }}</td>
-                                <td style="text-align:center; padding:8px; color:#f59e0b;">{{ $act['sin_calificar'] }}</td>
-                                <td style="text-align:center; padding:8px;">{{ $act['reopened'] }}</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-                @endforeach
-            </div>
-        </details>
-        
-    </div>
-    @endforeach
-@endif
 
 @endsection
 

@@ -347,9 +347,9 @@
             <a href="{{ route('calificaciones.index') }}" class="nav-item {{ request()->routeIs('calificaciones.*') ? 'active' : '' }}">
                 <span class="icon">📚</span> Calificaciones
             </a>
-            <a href="{{ route('alumnos.riesgo') }}" class="nav-item {{ request()->routeIs('alumnos.*') ? 'active' : '' }}">
+           <!-- <a href="{{ route('alumnos.riesgo') }}" class="nav-item {{ request()->routeIs('alumnos.*') ? 'active' : '' }}">
                 <span class="icon">⚠️</span> Alumnos en riesgo
-            </a>
+            </a> -->
 
             <div class="nav-section">Sistema</div>
             <form method="POST" action="{{ route('cache.limpiar') }}">
